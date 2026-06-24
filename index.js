@@ -3,20 +3,19 @@ dns.setServers(['1.1.1.1', '1.0.0.1']);
 
 const express = require('express');
 const dotenv = require("dotenv");
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const cors = require("cors");
 dotenv.config();
+
 const app = express();
-app.use(cors())
 
-const port =process.env.PORT || 8085
+// 💡 মিডলওয়্যার সমূহ
+app.use(cors());
+app.use(express.json()); // 👈 এই লাইনটি অবশ্যই লাগবে, তা না হলে req.body খালি আসবে!
 
+const port = process.env.NEXT_PUBLIC_SERVER_URL || 8085;
+const uri = process.env.MONGO_DB_URI;
 
-
-
-const uri =process.env.MONGO_DB_URI;
-
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -27,21 +26,49 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
+    await client.connect();
+    const db = client.db("medicare_db");
+    const subscriptionCollection = db.collection("subscription");
+    const userCollection = db.collection('user');
 
-    await client.connect();
-    const db = client.db("medicare");
-    // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    app.post("/subscription", async (req, res) => {
+      try {
+        const { sessionId, userId, priceId } = req.body;
+
+        // ভ্যালিডেশন চেক
+        if (!userId) {
+          return res.status(400).json({ error: "userId is required" });
+        }
+
+        // ১. সাবস্ক্রিপশন কালেকশনে ডাটা ইনসার্ট
+        await subscriptionCollection.insertOne({
+          sessionId,
+          userId,
+          priceId,
+          createdAt: new Date()
+        });
+
+        // ২. ইউজারের রোল আপডেট করে 'pro' করা
+        await userCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          { $set: { role: 'pro' } }
+        );
+
+        res.json({ massage: "Payment SuccessFull" });
+      } catch (error) {
+        console.error("Error updating subscription:", error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
+  } catch (error) {
+    console.error("Database connection error:", error);
   }
 }
 run().catch(console.dir);
-
 
 app.get('/', (req, res) => {
   res.send('Hello World!');
