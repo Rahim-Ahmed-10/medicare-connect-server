@@ -158,6 +158,35 @@ prescriptionCollection = db.collection("prescriptions");
       }
     });
 
+    app.get("/api/admin/dashboard-stats", async (req, res) => {
+  try {
+    const totalPatients = await userCollection.countDocuments({ role: 'patient' });
+    const totalClinicians = await userCollection.countDocuments({ role: 'doctor' });
+    const totalBookings = await bookingsCollection.countDocuments({});
+    
+    // মোট আয় (Revenue) ক্যালকুলেশন
+    const revenueData = await bookingsCollection.aggregate([
+      { 
+        $group: { 
+          _id: null, 
+          total: { $sum: { $toDouble: "$amount" } } // 'amount' ফিল্ডটি স্ট্রিং হলে নাম্বারে কনভার্ট করা হয়েছে
+        } 
+      }
+    ]).toArray();
+    
+    const totalRevenue = revenueData.length > 0 ? revenueData[0].total : 0;
+
+    res.json({ 
+      totalPatients, 
+      totalClinicians, 
+      totalBookings, 
+      totalRevenue 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
     // ==========================================
     // 🏥 ডক্টরের ড্যাশবোর্ডের বুকিং ডাটা গেট করার এন্ডপয়েন্ট (Name ভিত্তিক)
     // ==========================================
@@ -294,16 +323,16 @@ app.post("/api/prescriptions", async (req, res) => {
   }
 });
 
-// app.get("/api/bookings/:id", async (req, res) => {
-//     try {
-//         const id = req.params.id;
-//         const booking = await bookingsCollection.findOne({ _id: new ObjectId(id) });
-//         if (!booking) return res.status(404).json({ message: "Booking not found" });
-//         res.json({ success: true, data: booking });
-//     } catch (error) {
-//         res.status(500).json({ error: error.message });
-//     }
-// });
+app.get("/api/bookings/:id", async (req, res) => {
+    try {
+        const id = req.params.id;
+        const booking = await bookingsCollection.findOne({ _id: new ObjectId(id) });
+        if (!booking) return res.status(404).json({ message: "Booking not found" });
+        res.json({ success: true, data: booking });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // app.get("/api/doctor/profile", async (req, res) => {
 //     try {
@@ -315,6 +344,21 @@ app.post("/api/prescriptions", async (req, res) => {
 //         res.status(500).json({ error: error.message });
 //     }
 // });
+
+app.get("/api/doctor/profile", async (req, res) => {
+    try {
+        const { email } = req.query;
+        // আপনার ডাটাবেস কালেকশনের নাম 'account' বা 'users' যা ব্যবহার করছেন তা দিন
+        const doctor = await accountCollection.findOne({ email: email }); 
+        
+        if (!doctor) {
+            return res.status(404).json({ success: false, message: "Profile not found" });
+        }
+        res.json({ success: true, data: doctor });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 // ১. বুকিং আইডি দিয়ে ডাটা খোঁজার রাউট (এটি না থাকলে পেজে ডাটা আসবে না)
 app.get("/api/bookings/:id", async (req, res) => {
   try {
@@ -364,6 +408,21 @@ app.post("/api/prescriptions", async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
       }
     });
+
+    // আপনার সার্ভার ফাইলের রিভিউ সেকশনে এটি যোগ করুন:
+app.post("/api/reviews", async (req, res) => {
+  try {
+    const reviewData = req.body;
+    // এখানে ডাটাবেসে সেভ করার লজিক
+    const result = await reviewsCollection.insertOne({
+      ...reviewData,
+      createdAt: new Date()
+    });
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
     // MongoDB Ping
     // await client.db("admin").command({ ping: 1 });
