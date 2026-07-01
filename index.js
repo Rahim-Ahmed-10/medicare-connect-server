@@ -60,7 +60,7 @@ const verifyToken = async (req, res, next) => {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("medicare_db");
     
     // কালেকশন ইনিশিয়ালাইজেশন
@@ -293,6 +293,28 @@ app.post("/api/prescriptions", async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// app.get("/api/bookings/:id", async (req, res) => {
+//     try {
+//         const id = req.params.id;
+//         const booking = await bookingsCollection.findOne({ _id: new ObjectId(id) });
+//         if (!booking) return res.status(404).json({ message: "Booking not found" });
+//         res.json({ success: true, data: booking });
+//     } catch (error) {
+//         res.status(500).json({ error: error.message });
+//     }
+// });
+
+// app.get("/api/doctor/profile", async (req, res) => {
+//     try {
+//         const email = req.query.email; // ফ্রন্টএন্ড থেকে পাঠানো ইমেইল
+//         const doctor = await userCollection.findOne({ email: email, role: 'doctor' });
+//         if (!doctor) return res.status(404).json({ success: false, message: "No profile found" });
+//         res.json({ success: true, data: doctor });
+//     } catch (error) {
+//         res.status(500).json({ error: error.message });
+//     }
+// });
 // ১. বুকিং আইডি দিয়ে ডাটা খোঁজার রাউট (এটি না থাকলে পেজে ডাটা আসবে না)
 app.get("/api/bookings/:id", async (req, res) => {
   try {
@@ -344,7 +366,7 @@ app.post("/api/prescriptions", async (req, res) => {
     });
 
     // MongoDB Ping
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } catch (error) {
     console.error("Database connection error:", error);
