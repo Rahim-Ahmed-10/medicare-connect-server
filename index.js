@@ -12,9 +12,9 @@ const app = express();
 
 // 💡 মিডলওয়্যার সমূহ
 app.use(cors());
-app.use(express.json()); // 👈 req.body হ্যান্ডেল করার জন্য এটি অত্যন্ত জরুরি
+app.use(express.json()); // req.body হ্যান্ডেল করার জন্য
 
-// 🎯 পোর্ট কনফিগারেশন ঠিক করা হলো (শুধুমাত্র সংখ্যা ৮MDg বা পরিবেশের পোর্ট নেবে)
+// 🎯 পোর্ট কনফিগারেশন ঠিক করা হলো
 const port = process.env.PORT || 8085;
 const uri = process.env.MONGO_DB_URI;
 
@@ -26,31 +26,35 @@ const client = new MongoClient(uri, {
   }
 });
 
+// 🌍 গ্লোবাল কালেকশন ভ্যারিয়েবল ডিক্লেয়ারেশন (যাতে সব রাউট অ্যাক্সেস পায়)
+let subscriptionCollection;
+let userCollection;
+let bookingsCollection;
+let reviewsCollection;
+let prescriptionCollection;
+
 const JWKS = createRemoteJWKSet(new URL(`${process.env.BETTER_AUTH_URL}/api/auth/jwks`))
 
 const verifyToken = async (req, res, next) => {
-  const authHeaders= req.headers.Authorization;
+  const authHeaders = req.headers.Authorization;
 
   if(!authHeaders || !authHeaders.startsWith("Bearer")){
-    return res.status(401).json({massage:"Unauthorized"})
+    return res.status(401).json({message:"Unauthorized"})
   }
 
   const token = authHeaders.split(" ")[1]
 
   if(!token){
-     return res.status(401).json({massage:"Unauthorized"})   
+     return res.status(401).json({message:"Unauthorized"})   
   }
 
   try{
     const {payload} = await jwtVerify(token, JWKS)
     console.log(payload)
-
     next();
-
   }catch(error){
     console.log(error)
-     return res.status(401).json({massage:"Unauthorized"}) 
-
+     return res.status(401).json({message:"Unauthorized"}) 
   }
 }
 
@@ -58,10 +62,14 @@ async function run() {
   try {
     await client.connect();
     const db = client.db("medicare_db");
-    const subscriptionCollection = db.collection("subscription");
-    const userCollection = db.collection('user');
-    const bookingsCollection = db.collection("bookings");
-    const reviewsCollection = db.collection("reviews");
+    
+    // কালেকশন ইনিশিয়ালাইজেশন
+    subscriptionCollection = db.collection("subscription");
+    userCollection = db.collection('user');
+    bookingsCollection = db.collection("bookings");
+    reviewsCollection = db.collection("reviews");
+    // run() ফাংশনের ভেতরে:
+prescriptionCollection = db.collection("prescriptions");
 
     // ==========================================
     // 💳 সাবস্ক্রিপশন রাউট
@@ -71,7 +79,6 @@ async function run() {
         const { sessionId, userId, priceId } = req.body;
 
         const isExist = await subscriptionCollection.findOne({ sessionId });
-
         if (isExist) {
           return res.json({ message: "Already IsExist" });
         }
@@ -100,7 +107,7 @@ async function run() {
     });
 
     // ==========================================
-    // 📥 বুকিং ডেটা সংরক্ষণ করার এন্ডপয়েন্ট
+    // 📥 বুকিং ডেটা সংরক্ষণ (রোগীর দিক থেকে)
     // ==========================================
     app.post("/api/bookings", async (req, res) => {
       try {
@@ -131,7 +138,7 @@ async function run() {
     });
 
     // ==========================================
-    // 📤 নির্দিষ্ট ইউজারের বুকিং গেট করার এন্ডপয়েন্ট
+    // 📤 নির্দিষ্ট রোগীর বুকিং গেট করার এন্ডপয়েন্ট (Email ভিত্তিক)
     // ==========================================
     app.get("/api/bookings", async (req, res) => {
       try {
@@ -152,7 +159,24 @@ async function run() {
     });
 
     // ==========================================
-    // ❌ অ্যাপয়েন্টমেন্ট বাতিল বা ডিলিট করার এন্ডপয়েন্ট
+    // 🏥 ডক্টরের ড্যাশবোর্ডের বুকিং ডাটা গেট করার এন্ডপয়েন্ট (Name ভিত্তিক)
+    // ==========================================
+    app.get('/api/doctor/bookings', async (req, res) => {
+        try {
+            const { doctorName } = req.query; 
+            let query = {};
+            if (doctorName) {
+                query = { doctorName: doctorName }; 
+            }
+            const result = await bookingsCollection.find(query).toArray();
+            res.send({ success: true, data: result });
+        } catch (error) {
+            res.status(500).send({ success: false, message: error.message });
+        }
+    });
+
+    // ==========================================
+    // ❌ অ্যাপয়েন্টমেন্ট বাতিল করার এন্ডপয়েন্ট
     // ==========================================
     app.delete("/api/bookings/:id", async (req, res) => {
       try {
@@ -165,18 +189,16 @@ async function run() {
           res.status(404).json({ error: "Appointment not found" });
         }
       } catch (error) {
-        // 🎯 ডাইনামিক এরর মেসেজ ঠিক করা হলো
         res.status(500).json({ success: false, error: error.message });
       }
     });
 
     // ==========================================
-    // 📥 রোগীর রিভিউ সাবমিট বা সেভ করার এন্ডপয়েন্ট
+    // 📥 রোগীর রিভিউ সাবমিট করার এন্ডপয়েন্ট
     // ==========================================
-    app.post("/api/reviews/submit",async (req, res) => {
+    app.post("/api/reviews/submit", async (req, res) => {
       try {
         const reviewData = req.body;
-        
         if (!reviewData.email || !reviewData.comment) {
           return res.status(400).json({ success: false, message: "Required fields missing." });
         }
@@ -188,13 +210,124 @@ async function run() {
 
         res.status(201).json({ success: true, data: result });
       } catch (error) {
-        // 🎯 স্ট্রিং এরর ফিক্স করা হলো
         res.status(500).json({ success: false, error: error.message });
       }
     });
 
     // ==========================================
-    // 📊 নির্দিষ্ট ইউজারের মোট রিভিউর সংখ্যা গেট করার এন্ডপয়েন্ট
+    // ⭐ ডক্টরের ড্যাশবোর্ডের রিভিউ ডাটা গেট করার এন্ডপয়েন্ট (Name ভিত্তিক)
+    // ==========================================
+    app.get('/api/doctor/reviews', async (req, res) => {
+        try {
+            const { doctorName } = req.query;
+            let query = {};
+            if (doctorName) {
+                query = { doctorName: doctorName };
+            }
+            const result = await reviewsCollection.find(query).toArray();
+            res.send({ success: true, data: result });
+        } catch (error) {
+            res.status(500).send({ success: false, message: error.message });
+        }
+    });
+
+    
+// ==========================================
+// ✅ অ্যাপয়েন্টমেন্ট স্ট্যাটাস আপডেট (Pending/Accepted/Completed)
+// ==========================================
+app.patch("/api/bookings/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { status } = req.body; // রিকোয়েস্ট বডি থেকে নতুন স্ট্যাটাস
+
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: {
+        status: status, // যেমন: "Accepted" বা "Completed"
+      },
+    };
+
+    const result = await bookingsCollection.updateOne(filter, updateDoc);
+
+    if (result.modifiedCount > 0) {
+      res.json({ success: true, message: "Status updated successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "Booking not found or status unchanged" });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get("/api/prescriptions", async (req, res) => {
+  try {
+    // prescriptionCollection টি আগে ডিক্লেয়ার করা থাকতে হবে
+    const allPrescriptions = await prescriptionCollection.find().toArray();
+    res.json({ success: true, data: allPrescriptions });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
+// 🏥 প্রেসক্রিপশন সেভ করার এন্ডপয়েন্ট
+// ==========================================
+app.post("/api/prescriptions", async (req, res) => {
+  try {
+    // ফ্রন্টএন্ড থেকে পাঠানো ডাটা এখানে ঠিকমতো রিসিভ হচ্ছে কি না চেক করুন
+    const { bookingId, patientName, doctorName, diagnosis, meds, notes } = req.body;
+
+    const newPrescription = {
+      bookingId,
+      patientName,   // এটি যদি undefined আসে, তবে ডাটাবেসে সেভ হবে না
+      doctorName,    // এটি যদি undefined আসে, তবে ডাটাবেসে সেভ হবে না
+      diagnosis,
+      meds,
+      notes,
+      createdAt: new Date()
+    };
+
+    const result = await prescriptionCollection.insertOne(newPrescription);
+    res.status(201).json({ success: true, insertedId: result.insertedId });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+// ১. বুকিং আইডি দিয়ে ডাটা খোঁজার রাউট (এটি না থাকলে পেজে ডাটা আসবে না)
+app.get("/api/bookings/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const booking = await bookingsCollection.findOne({ _id: new ObjectId(id) });
+    if (!booking) return res.status(404).json({ message: "Not found" });
+    res.json({ success: true, data: booking });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ২. প্রেসক্রিপশন সেভ করার রাউট (এখানে বুকিং স্ট্যাটাস আপডেট লজিক যোগ করা হয়েছে)
+app.post("/api/prescriptions", async (req, res) => {
+  try {
+    const { bookingId, patientName, doctorName, diagnosis, meds, notes } = req.body;
+    
+    // প্রেসক্রিপশন সেভ
+    const result = await prescriptionCollection.insertOne({
+      bookingId, patientName, doctorName, diagnosis, meds, notes, createdAt: new Date()
+    });
+
+    // বুকিং স্ট্যাটাস 'Completed' আপডেট
+    await bookingsCollection.updateOne(
+      { _id: new ObjectId(bookingId) },
+      { $set: { status: "Completed" } }
+    );
+
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+    // ==========================================
+    // 📊 নির্দিষ্ট রোগীর মোট রিভিউর সংখ্যা গেট করার এন্ডপয়েন্ট
     // ==========================================
     app.get("/api/reviews/count", async (req, res) => {
       try {
