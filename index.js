@@ -238,7 +238,7 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
-app.get("/api/doctors", async (req, res) => {
+app.get("/api/doctors",verifyToken, async (req, res) => {
     try {
         const doctors = await doctorCollection.find({}).toArray();
         res.json(doctors);
@@ -266,11 +266,27 @@ app.patch("/api/doctors/:action/:id", async (req, res) => {
 
 app.get("/api/payments", async (req, res) => {
     try {
-        // এখানে db এর পরিবর্তে সরাসরি paymentsCollection ব্যবহার করুন
-        const payments = await paymentsCollection.find({}).toArray();
+        // paymentsCollection এর পরিবর্তে bookingsCollection ব্যবহার করুন
+        const payments = await bookingsCollection.find({}).toArray();
         res.json(payments);
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// পেমেন্টের সাথে ইউজার এবং ডক্টরের নাম মিলিয়ে ডাটা পাঠানোর নতুন API
+app.get("/api/all-cash-flows", async (req, res) => {
+    try {
+        // paymentsCollection এর পরিবর্তে bookingsCollection ব্যবহার করুন
+        const payments = await bookingsCollection.find({}).toArray();
+        
+        if (payments.length === 0) {
+            return res.json({ success: false, message: "No data found in bookings collection" });
+        }
+        
+        res.json({ success: true, data: payments });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -375,6 +391,21 @@ app.patch("/api/bookings/:id", async (req, res) => {
   }
 });
 
+// বুকিং স্ট্যাটাস আপডেট করার জন্য
+app.patch("/api/bookings/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const result = await bookingsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: status } }
+    );
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get("/api/prescriptions", async (req, res) => {
   try {
     // prescriptionCollection টি আগে ডিক্লেয়ার করা থাকতে হবে
@@ -410,6 +441,8 @@ app.post("/api/prescriptions", async (req, res) => {
   }
 });
 
+
+
 app.get("/api/bookings/:id", async (req, res) => {
     try {
         const id = req.params.id;
@@ -421,16 +454,6 @@ app.get("/api/bookings/:id", async (req, res) => {
     }
 });
 
-// app.get("/api/doctor/profile", async (req, res) => {
-//     try {
-//         const email = req.query.email; // ফ্রন্টএন্ড থেকে পাঠানো ইমেইল
-//         const doctor = await userCollection.findOne({ email: email, role: 'doctor' });
-//         if (!doctor) return res.status(404).json({ success: false, message: "No profile found" });
-//         res.json({ success: true, data: doctor });
-//     } catch (error) {
-//         res.status(500).json({ error: error.message });
-//     }
-// });
 
 app.get("/api/doctor/profile", async (req, res) => {
     try {
@@ -459,7 +482,7 @@ app.get("/api/bookings/:id", async (req, res) => {
 });
 
 // ২. প্রেসক্রিপশন সেভ করার রাউট (এখানে বুকিং স্ট্যাটাস আপডেট লজিক যোগ করা হয়েছে)
-app.post("/api/prescriptions", async (req, res) => {
+app.post("/api/prescriptions",verifyToken, async (req, res) => {
   try {
     const { bookingId, patientName, doctorName, diagnosis, meds, notes } = req.body;
     
@@ -495,6 +518,41 @@ app.post("/api/prescriptions", async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
       }
     });
+
+    // নির্দিষ্ট একটি প্রেসক্রিপশন খোঁজার জন্য (এডিট পেজের জন্য)
+app.get("/api/prescriptions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await prescriptionCollection.findOne({ _id: new ObjectId(id) });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// নির্দিষ্ট প্রেসক্রিপশন আপডেট করার জন্য (এডিট সেভ করার জন্য)
+// server.js এ এই রাউটটি ব্যবহার করুন
+app.patch("/api/prescriptions/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { _id, ...updateData } = req.body; // _id ফিল্ডটিকে বডি থেকে আলাদা করে ফেলা হলো
+
+    const result = await prescriptionCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: "Prescription not found" });
+    }
+
+    res.json({ success: true, message: "Updated successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
 
     // আপনার সার্ভার ফাইলের রিভিউ সেকশনে এটি যোগ করুন:
 app.post("/api/reviews", async (req, res) => {
