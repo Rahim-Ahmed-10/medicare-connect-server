@@ -68,6 +68,8 @@ async function run() {
     userCollection = db.collection('user');
     bookingsCollection = db.collection("bookings");
     reviewsCollection = db.collection("reviews");
+    doctorCollection = db.collection("doctors");
+    paymentsCollection = db.collection("payments");
     // run() ফাংশনের ভেতরে:
 prescriptionCollection = db.collection("prescriptions");
 
@@ -158,33 +160,118 @@ prescriptionCollection = db.collection("prescriptions");
       }
     });
 
-    app.get("/api/admin/dashboard-stats", async (req, res) => {
+  app.get("/api/admin/dashboard-stats", async (req, res) => {
   try {
+    // ১. মূল স্ট্যাটাসসমূহ
     const totalPatients = await userCollection.countDocuments({ role: 'patient' });
     const totalClinicians = await userCollection.countDocuments({ role: 'doctor' });
     const totalBookings = await bookingsCollection.countDocuments({});
     
-    // মোট আয় (Revenue) ক্যালকুলেশন
+    // ২. মোট রেভিনিউ
     const revenueData = await bookingsCollection.aggregate([
-      { 
-        $group: { 
-          _id: null, 
-          total: { $sum: { $toDouble: "$amount" } } // 'amount' ফিল্ডটি স্ট্রিং হলে নাম্বারে কনভার্ট করা হয়েছে
-        } 
-      }
+      { $group: { _id: null, total: { $sum: { $toDouble: "$amount" } } } }
     ]).toArray();
-    
     const totalRevenue = revenueData.length > 0 ? revenueData[0].total : 0;
+
+    // ৩. ডক্টর পারফরম্যান্স (রেটিং)
+    const ratingData = await reviewsCollection.find({}).toArray();
+
+    // ৪. স্পেশালিটি ব্রেকডাউন (Specialty Breakdown)
+    const specialtyData = await bookingsCollection.aggregate([
+      { $group: { _id: "$specialty", count: { $sum: 1 } } }
+    ]).toArray();
+
+    // ৫. অ্যাপয়েন্টমেন্ট টাইমলাইন (Last 7 Days)
+    const timelineData = await bookingsCollection.aggregate([
+      { $group: { _id: "$date", count: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
+    ]).toArray();
 
     res.json({ 
       totalPatients, 
       totalClinicians, 
       totalBookings, 
-      totalRevenue 
+      totalRevenue,
+      ratingData,
+      specialtyData,
+      timelineData
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ইউজার সাসপেন্ড করা (Status update)
+app.patch("/api/users/suspend/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: { status: "suspended" },
+    };
+    const result = await userCollection.updateOne(filter, updateDoc);
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ইউজার ডিলিট করা
+app.delete("/api/users/delete/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await userCollection.deleteOne(query);
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// সব ইউজার নিয়ে আসা (GET Request)
+app.get("/api/users", async (req, res) => {
+  try {
+    const users = await userCollection.find({}).toArray();
+    res.send(users);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/doctors", async (req, res) => {
+    try {
+        const doctors = await doctorCollection.find({}).toArray();
+        res.json(doctors);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+// স্ট্যাটাস আপডেট API 
+app.patch("/api/doctors/:action/:id", async (req, res) => {
+    try {
+        const { action, id } = req.params;
+        const statusMap = { 'approve': 'Verified', 'cancel': 'Pending', 'reject': 'Rejected' };
+        
+        const result = await doctorCollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { verificationStatus: statusMap[action] } } // ডাটাবেজে এটি নতুন ফিল্ড হিসেবে যোগ হবে
+        );
+        res.json({ success: true, result });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get("/api/payments", async (req, res) => {
+    try {
+        // এখানে db এর পরিবর্তে সরাসরি paymentsCollection ব্যবহার করুন
+        const payments = await paymentsCollection.find({}).toArray();
+        res.json(payments);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
     // ==========================================
