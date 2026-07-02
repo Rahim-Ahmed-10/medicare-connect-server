@@ -238,7 +238,7 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
-app.get("/api/doctors",verifyToken, async (req, res) => {
+app.get("/api/doctors", async (req, res) => {
     try {
         const doctors = await doctorCollection.find({}).toArray();
         res.json(doctors);
@@ -324,6 +324,22 @@ app.get("/api/all-cash-flows", async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
       }
     });
+
+    // server.js এ এই এন্ডপয়েন্টটি যোগ করুন
+app.get("/api/doctor/total-patients", async (req, res) => {
+  try {
+    const { doctorName } = req.query;
+    // শুধুমাত্র ঐ ডাক্তারের অ্যাপয়েন্টমেন্টগুলো খুঁজে বের করুন
+    const bookings = await bookingsCollection.find({ doctorName: doctorName }).toArray();
+    
+    // Set ব্যবহার করে ইউনিক ইউজার ইমেইল বের করুন
+    const uniquePatients = new Set(bookings.map(b => b.userEmail));
+    
+    res.json({ success: true, count: uniquePatients.size });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
     // ==========================================
     // 📥 রোগীর রিভিউ সাবমিট করার এন্ডপয়েন্ট
@@ -531,7 +547,7 @@ app.get("/api/prescriptions/:id", async (req, res) => {
 });
 
 // নির্দিষ্ট প্রেসক্রিপশন আপডেট করার জন্য (এডিট সেভ করার জন্য)
-// server.js এ এই রাউটটি ব্যবহার করুন
+
 app.patch("/api/prescriptions/:id", async (req, res) => {
   try {
     const { id } = req.params;
