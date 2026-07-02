@@ -160,44 +160,49 @@ prescriptionCollection = db.collection("prescriptions");
       }
     });
 
-  app.get("/api/admin/dashboard-stats", async (req, res) => {
+app.get("/api/admin/dashboard-stats", async (req, res) => {
   try {
-    // ১. মূল স্ট্যাটাসসমূহ
-    const totalPatients = await userCollection.countDocuments({ role: 'patient' });
-    const totalClinicians = await userCollection.countDocuments({ role: 'doctor' });
-    const totalBookings = await bookingsCollection.countDocuments({});
-    
-    // ২. মোট রেভিনিউ
-    const revenueData = await bookingsCollection.aggregate([
-      { $group: { _id: null, total: { $sum: { $toDouble: "$amount" } } } }
-    ]).toArray();
-    const totalRevenue = revenueData.length > 0 ? revenueData[0].total : 0;
-
-    // ৩. ডক্টর পারফরম্যান্স (রেটিং)
-    const ratingData = await reviewsCollection.find({}).toArray();
-
-    // ৪. স্পেশালিটি ব্রেকডাউন (Specialty Breakdown)
-    const specialtyData = await bookingsCollection.aggregate([
-      { $group: { _id: "$specialty", count: { $sum: 1 } } }
-    ]).toArray();
-
-    // ৫. অ্যাপয়েন্টমেন্ট টাইমলাইন (Last 7 Days)
-    const timelineData = await bookingsCollection.aggregate([
-      { $group: { _id: "$date", count: { $sum: 1 } } },
-      { $sort: { _id: 1 } }
-    ]).toArray();
-
-    res.json({ 
+    // ১. সমান্তরালভাবে সব ডাটা কুয়েরি করা (পারফরম্যান্সের জন্য)
+    const [
       totalPatients, 
       totalClinicians, 
       totalBookings, 
-      totalRevenue,
-      ratingData,
+      revenueData, 
+      specialtyData, 
+      timelineData,
+      allReviews
+    ] = await Promise.all([
+      userCollection.countDocuments({ role: 'patient' }),
+      userCollection.countDocuments({ role: 'doctor' }),
+      bookingsCollection.countDocuments({}),
+      bookingsCollection.aggregate([
+        { $group: { _id: null, total: { $sum: { $toDouble: { $ifNull: ["$amount", 0] } } } } }
+      ]).toArray(),
+      bookingsCollection.aggregate([
+        { $match: { specialty: { $exists: true, $ne: null } } },
+        { $group: { _id: "$specialty", count: { $sum: 1 } } }
+      ]).toArray(),
+      bookingsCollection.aggregate([
+        { $group: { _id: "$date", count: { $sum: 1 } } },
+        { $sort: { _id: 1 } }
+      ]).toArray(),
+      reviewsCollection.find({}).toArray()
+    ]);
+
+    // ২. রেসপন্স পাঠানো
+    res.json({ 
+      success: true,
+      totalPatients, 
+      totalClinicians, 
+      totalBookings, 
+      totalRevenue: revenueData[0]?.total || 0,
       specialtyData,
-      timelineData
+      timelineData,
+      ratingData: allReviews // আপনার আগের কোড থেকে রিভিউ ডাটা এখানে রাখা হয়েছে
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // console.error("Dashboard Stats Error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
